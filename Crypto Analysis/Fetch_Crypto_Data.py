@@ -1,163 +1,259 @@
-
-
 from binance.client import Client
-# import pandas as pd
-# import csv
-# import datetime as dt
-# import requests
-# import time
-# import pandas
-# from binance.websockets import BinanceSocketManager
-# from requests.packages.urllib3.exceptions import InsecureRequestWarning
-# requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-# pd.options.mode.chained_assignment = None
-# import logging
-# logging.basicConfig()
+import time
+import datetime
+import sqlite3
 
+db = r'C:\sqllite\Crypto.db'
+sqliteConnection = sqlite3.connect(db)
+cursor = sqliteConnection.cursor()
+sql_str = 'select * from not_keys'
+cursor.execute(sql_str)
+rows = cursor.fetchall()
+cursor.close()
 
+for tup1,tup2 in rows:
+    api_key = tup1
+    api_secret = tup2
 
-'''
-A small function to extract API and Secret Api keys from the api_key.txt
-'''
+client = Client(api_key, api_secret)
 
-def get_api(filename):
+def run():
+    SYMBOL = 'ETHUSDT'
+    list_of_symbols = ['ETHUSDT']
+    time.sleep(5)
+
     try:
-        with open(filename,'r') as api_key:
-            api_key = api_key.read()
-            return api_key
-            
-    except Exception as e:
-        print(e)
-        print('Write the keys in string formats. For eg: ["fjkdslfdslfds"]')
+        status = client.get_system_status()
 
-keys = get_api('C:\\Users\\dakot\\Documents\\Python Projects\\Crypto Analysis\\api_key.txt')
-    
+        if(status.get('msg') == 'normal'):
 
-client = Client(keys[0], keys[1])
+            try:
+                sqliteConnection = sqlite3.connect(db)
+                cursor = sqliteConnection.cursor()
 
+                #klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_1HOUR, "11 Feb, 2020 12:00:00")
+                
+                klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_1HOUR, "1 day ago UTC")
 
-# Lets read the contents of the Tokens.dat
-with open('Tokens.dat','r') as tokens:
-    mess=tokens.read()
-    instruments=eval(mess) 
+                ''' KLine list indexes
+                    index 0   // Open time
+                    index 1   // Open
+                    index 2   // High
+                    index 3   // Low
+                    index 4   // Close
+                    index 5   // Volume
+                    index 6   // Close time
+                    index 7   // Quote asset volume
+                    index 8   // Number of trades
+                    index 9   // Taker buy base asset volume
+                    index 10  // Taker buy quote asset volume
+                    index 11  // Ignore.
+                '''
 
+                for kline in klines:
+                    open_time = kline[0]
+                    open_price = kline[1]
+                    high = kline[2]
+                    low = kline[3]
+                    close = kline[4]
+                    volume = kline[5]
+                    close_time = kline[6]
+                    quote_asset_volume = kline[7]
+                    num_of_trades = kline[8]
+                    taker_buy_bav = kline[9]
+                    taker_buy_qav = kline[10]
 
-# # List of all the traded tokens on Binance
-total_traded_tokens = [i['symbol'] for i in client.get_all_tickers()]
+                    insert_sql = f'''
+                    
+                    insert into HIST_ETHUSDT_DATA (SYMBOL, OPEN_TIME, OPEN_PRICE, HIGH, LOW, CLOSE, VOLUME, CLOSE_TIME
+                    ,QUOTE_ASSET_VOLUME, NUM_OF_TRADES, TAKER_BUY_BAV, TAKER_BUY_QAV) VALUES 
+                    ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}',{close_time},'
+                    {quote_asset_volume}',{num_of_trades},'{taker_buy_bav}','{taker_buy_qav}')     
+                    '''       
+                    count = cursor.execute(insert_sql)
+                    print("Record inserted successfully into SqliteDb_developers table ", cursor.rowcount)
 
+            except sqlite3.Error as error:
+                print("Failed to insert data into sqlite table", error)
 
-# '''
-# The below command allows us to throw an output on console to notify the user of the invalid token in the 
-# Tokens.dat file
-# '''
-
-valid_tokens = []
-for token in instruments:
-    if token not in total_traded_tokens:
-        print ('"{}" ,Doesnt seem to be a valid pair.'.format(token))
-        print ('However we will continue fetching data for other valid pairs')
-    else:
-        valid_tokens.append(token)
-
-
-
-# # Lets create as many instances  as the number of tokens in our valid_tokens list 
-instance_list = ['bm'+str(index) for index, instrument in enumerate(valid_tokens)]
-'''
-Output-
-['bm0', 'bm1', 'bm2', 'bm3', 'bm4', 'bm5', 'bm6', 'bm7', 'bm8', 'bm9']
-'''
-
-'''
-Please Note- If you add new token/pair to Tokens.dat after creating the instance_list, 
-make sure you rerun the above code
-'''
-
-
-# # Creating a CSV file to which we will later append rows by calling process_message function
-# with open('SymbolValues.csv','w') as f:
-#     w = csv.writer(f)
-#     w.writerow(['Date','Dt in Milliscs','Symbol','BestBid','BidQuantity','BestAsk','AskQuantity'])
-
+            sqliteConnection.commit()
+            cursor.close()
 
 
-# # The function writes new rows to a csv file
-
-# def process_message(msg):
-#     #print msg
-#     ''' 
-#     Output 
-#     Date	                 Dt in Milliscs	Symbol	   BestBid	   BidQuantity	BestAsk	AskQuantity
-#     06/08/2018  3:05:41 AM 1.5335E+12	       BTCUSDT	7041.62	0.496764	    7045.59	 0.496045
-#     06/08/2018  3:05:42 AM 1.5335E+12	       ETHUSDT	411.68	    3.03471	    411.78     0.06477 
-    
-#     msg Format
-#     {u'A': u'197.92000000', u'C': 1533544494324L, u'B': u'94.11000000', u'E': 1533544494323L, 
-#     u'F': 14569374, u'L': 14592416, u'O': 1533458094324L, u'Q': u'94.11000000', 
-#     u'P': u'2.420', u'a': u'13.64730000', u'c': u'13.63720000', u'b': u'13.63710000', u'e': u'24hrTicker', 
-#     u'h': u'13.97500000', u'l': u'13.27000000', u'o': u'13.31500000', u'n': 23043, u'q': u'14206367.56719700',
-#     u'p': u'0.32220000', u's': u'BNBUSDT', u'w': u'13.59595774', u'v': u'1044896.42000000', 
-#     u'x': u'13.29000000'}
-    
-#     {
-#                 "e": "24hrTicker",  # Event type
-#                 "E": 123456789,     # Event time
-#                 "s": "BNBBTC",      # Symbol
-#                 "p": "0.0015",      # Price change
-#                 "P": "250.00",      # Price change percent
-#                 "w": "0.0018",      # Weighted average price
-#                 "x": "0.0009",      # Previous day's close price
-#                 "c": "0.0025",      # Current day's close price
-#                 "Q": "10",          # Close trade's quantity
-#                 "b": "0.0024",      # Best bid price
-#                 "B": "10",          # Bid bid quantity
-#                 "a": "0.0026",      # Best ask price
-#                 "A": "100",         # Best ask quantity
-#                 "o": "0.0010",      # Open price
-#                 "h": "0.0025",      # High price
-#                 "l": "0.0010",      # Low price
-#                 "v": "10000",       # Total traded base asset volume
-#                 "q": "18",          # Total traded quote asset volume
-#                 "O": 0,             # Statistics open time
-#                 "C": 86400000,      # Statistics close time
-#                 "F": 0,             # First trade ID
-#                 "L": 18150,         # Last trade Id
-#                 "n": 18151          # Total number of trades
-#             }
-#     '''
-#     try:   
-#         with open('SymbolValues.csv','ab')as f:       
-#             w = csv.writer(f)
-#             w.writerow([dt.datetime.now(),msg['C'],msg['s'],msg['b'],msg['B'],msg['a'], msg['A']])
-#     except (IOError, pandas.errors.ParserError):
-#         print 'Seems you opened the csv file'
-#         print 'Not a problem. However once you close it the recording of data will begin again'
-#         time.sleep(15)    
-            
-#     return
-    
+        else:
+            print('shit')
 
 
-# '''
-# The Below instances are the pairs for which we want data to be collected. You can create new instances and 
-# add new pairs as per your preferences
-# '''
+    except():
+        pass
 
 
-# for instance, instrument in zip(instance_list,instruments):
-#     instance = BinanceSocketManager(client)
-#     instance.start_symbol_ticker_socket(instrument,process_message)
-#     instance.start()
-    
+def convert_ms_to_timestamp(ms):
+    timestamp = datetime.datetime.fromtimestamp(ms/1000.0).strftime("%m/%d/%y %H:%M:%S")
+    return timestamp
 
+def convert_time_binance(gt):
+    aa = str(gt)
+    bb = aa.replace("{'serverTime': ","")
+    aa = bb.replace("}","")
+    gg=int(aa)
+    ff=gg-10799260
+    uu=ff/1000
+    yy=int(uu)
+    tt=time.localtime(yy)
+    return tt
 
+def market_depth(sym, num_entries=20):
+    #Get market depth
+    #Retrieve and format market depth (order book) including time-stamp
+    i=0     #Used as a counter for number of entries
+    print("Order Book: ", convert_time_binance(client.get_server_time()))
+    depth = client.get_order_book(symbol=sym)
+    print(depth)
+    print(depth['asks'][0])
+    ask_tot=0.0
+    ask_price =[]
+    ask_quantity = []
+    bid_price = []
+    bid_quantity = []
+    bid_tot = 0.0
+    place_order_ask_price = 0
+    place_order_bid_price = 0
+    max_order_ask = 0
+    max_order_bid = 0
+    print("\n", sym, "\nDepth     ASKS:\n")
+    print("Price     Amount")
+    for ask in depth['asks']:
+        if i<num_entries:
+            if float(ask[1])>float(max_order_ask):
+                #Determine Price to place ask order based on highest volume
+                max_order_ask=ask[1]
+                place_order_ask_price=round(float(ask[0]),5)-0.0001
+            #ask_list.append([ask[0], ask[1]])
+            ask_price.append(float(ask[0]))
+            ask_tot+=float(ask[1])
+            ask_quantity.append(ask_tot)
+            #print(ask)
+            i+=1
+    j=0     #Secondary Counter for Bids
+    print("\n", sym, "\nDepth     BIDS:\n")
+    print("Price     Amount")
+    for bid in depth['bids']:
+        if j<num_entries:
+            if float(bid[1])>float(max_order_bid):
+                #Determine Price to place ask order based on highest volume
+                max_order_bid=bid[1]
+                place_order_bid_price=round(float(bid[0]),5)+0.0001
+            bid_price.append(float(bid[0]))
+            bid_tot += float(bid[1])
+            bid_quantity.append(bid_tot)
+            #print(bid)
+            j+=1
+    return ask_price, ask_quantity, bid_price, bid_quantity, place_order_ask_price, place_order_bid_price
+    #Plot Data
 
-    
+def scalping_orders(coin, wait=1, tot_time=1):
+    #Function for placing 'scalp orders'
+    #Calls on Visualizing Scalping Orders Function
+    ap, aq, bp, bq, place_ask_order, place_bid_order, spread, proj_spread, max_bid, min_ask = visualize_market_depth(wait, tot_time, coin)
+    print("Coin: {}\nPrice to Place Ask Order: {}\nPrice to place Bid Order: {}".format(coin, place_ask_order, place_bid_order))
+    print("Spread: {} % Projected Spread {} %".format(spread, proj_spread))
+    print("Max Bid: {} Min Ask: {}".format(max_bid, min_ask))
+    #Place Orders based on calculated bid-ask orders if projected > 0.05% (transaction fee)
+    #Documentation: http://python-binance.readthedocs.io/en/latest/account.html#orders
+    """
+    if proj_spread > 0.05:
+        quant1=100          #Determine Code Required to calculate 'minimum' quantity
+        #Place Bid Order:
+        bid_order1 = client.order_limit_buy(
+            symbol=coin,
+            quantity=quant1,
+            price=place_bid_order)
+        #Place Ask Order
+        ask_order1 = client.order_limit_sell(
+            symbol=coin,
+            quantity=quant1,
+            price=place_ask_order)
+    #Place second order if current spread > 0.05% (transaction fee)
+    """
 
+def visualize_market_depth(wait_time_sec='1', tot_time='1', sym='ICXBNB', precision=5):
+    cycles = int(tot_time)/int(wait_time_sec)
+    start_time = time.asctime()
+    fig, ax = plt.subplots()
+    for i in range(1,int(cycles)+1):
+        ask_pri, ask_quan, bid_pri, bid_quan, ask_order, bid_order = market_depth(sym)
 
-# print "Processed 0 ticks."
-# while True:
-#     count = len(pd.read_csv('SymbolValues.csv'))
-#     if count != 0 and count % 1000 == 0 :
-#         print "Processed {} ticks.".format(count)
-#         time.sleep(10)
+        #print(ask_price)
+        plt.plot(ask_pri, ask_quan, color = 'red', label='asks-cycle: {}'.format(i))
+        plt.plot(bid_pri, bid_quan, color = 'blue', label = 'bids-cycle: {}'.format(i))
+
+        #ax.plot(depth['bids'][0], depth['bids'][1])
+        max_bid = max(bid_pri)
+        min_ask = min(ask_pri)
+        max_quant = max(ask_quan[-1], bid_quan[-1])
+        spread = round(((min_ask-max_bid)/min_ask)*100,5)   #Spread based on market
+        proj_order_spread = round(((ask_order-bid_order)/ask_order)*100, precision)
+        price=round(((max_bid+min_ask)/2), precision)
+        plt.plot([price, price],[0, max_quant], color = 'green', label = 'Price - Cycle: {}'.format(i)) #Vertical Line for Price
+        plt.plot([ask_order, ask_order],[0, max_quant], color = 'black', label = 'Ask - Cycle: {}'.format(i))
+        plt.plot([bid_order, bid_order],[0, max_quant], color = 'black', label = 'Buy - Cycle: {}'.format(i))
+        #plt.plot([min_ask, min_ask],[0, max_quant], color = 'grey', label = 'Min Ask - Cycle: {}'.format(i))
+        #plt.plot([max_bid, max_bid],[0, max_quant], color = 'grey', label = 'Max Buy - Cycle: {}'.format(i))
+        ax.annotate("Max Bid: {} \nMin Ask: {}\nSpread: {} %\nCycle: {}\nPrice: {}"
+                    "\nPlace Bid: {} \nPlace Ask: {}\n Projected Spread: {} %".format(max_bid, min_ask, spread, i, price, bid_order, ask_order, proj_order_spread),
+                    xy=(max_bid, ask_quan[-1]), xytext=(max_bid, ask_quan[0]))
+        if i==(cycles+1):
+            break
+        else:
+            time.sleep(int(wait_time_sec))
+    #end_time = time.asctime()
+    ax.set(xlabel='Price', ylabel='Quantity',
+       title='Binance Order Book: {} \n {}\n Cycle Time: {} seconds - Num Cycles: {}'.format(sym, start_time, wait_time_sec, cycles))
+    plt.legend()
+    plt.show()
+    return ask_pri, ask_quan, bid_pri, bid_quan, ask_order, bid_order, spread, proj_order_spread, max_bid, min_ask
+
+def coin_prices(watch_list):
+    #Will print to screen, prices of coins on 'watch list'
+    #returns all prices
+    prices = client.get_all_tickers()
+    print("\nSelected (watch list) Ticker Prices: ")
+    for price in prices:
+        if price['symbol'] in watch_list:
+            print(price)
+    return prices
+
+def coin_tickers(watch_list):
+    # Prints to screen tickers for 'watch list' coins
+    # Returns list of all price tickers
+    tickers = client.get_orderbook_tickers()
+    print("\nWatch List Order Tickers: \n")
+    for tick in tickers:
+        if tick['symbol'] in watch_list:
+            print(tick)
+    return tickers
+
+def portfolio_management(deposit = '10000', withdraw=0, portfolio_amt = '0', portfolio_type='USDT', test_acct='True'):
+    """The Portfolio Management Function will be used to track profit/loss of Portfolio in Any Particular Currency (Default: USDT)"""
+    #Maintain Portfolio Statistics (Total Profit/Loss) in a file
+    pass
+
+def Bollinger_Bands():
+    #This Function will calculate Bollinger Bands for Given Time Period
+    #EDIT: Will use Crypto-Signal for this functionality
+    #https://github.com/CryptoSignal/crypto-signal
+    pass
+
+def buy_sell_bot():
+    pass
+
+def position_sizing():
+    pass
+
+def trailing_stop_loss():
+    pass
+
+if __name__ == "__main__":
+    run()
+
