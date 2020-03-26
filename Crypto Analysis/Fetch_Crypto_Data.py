@@ -2,6 +2,8 @@ from binance.client import Client
 import time
 import datetime
 import sqlite3
+import pandas as pd
+import pytz
 
 db = r'C:\sqllite\Crypto.db'
 sqliteConnection = sqlite3.connect(db)
@@ -30,10 +32,17 @@ def run():
             try:
                 sqliteConnection = sqlite3.connect(db)
                 cursor = sqliteConnection.cursor()
+                sql = 'SELECT * FROM HIST_ETHUSDT_DATA'
 
-                #klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_1HOUR, "11 Feb, 2020 12:00:00")
+                df = pd.read_sql(sql, sqliteConnection)
+                dates = df['OPEN_TIME'].tolist()
+                dates_list = [datetime.datetime.strptime(date, '%m/%d/%y %H:%M:%S') for date in dates]
+                max_local_dt = max(dates_list)   
+                max_utc_dt = local_to_utc(max_local_dt) + datetime.timedelta(seconds=60)
+                max_utc_str = max_utc_dt.strftime('%d %b, %Y %H:%M:%S')
                 
-                klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_1HOUR, "1 day ago UTC")
+                klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_5MINUTE, max_utc_str)
+                
 
                 ''' KLine list indexes
                     index 0   // Open time
@@ -67,12 +76,16 @@ def run():
                     
                     insert into HIST_ETHUSDT_DATA (SYMBOL, OPEN_TIME, OPEN_PRICE, HIGH, LOW, CLOSE, VOLUME, CLOSE_TIME
                     ,QUOTE_ASSET_VOLUME, NUM_OF_TRADES, TAKER_BUY_BAV, TAKER_BUY_QAV) VALUES 
-                    ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}',{close_time},'
+                    ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}','{convert_ms_to_timestamp(close_time)}','
                     {quote_asset_volume}',{num_of_trades},'{taker_buy_bav}','{taker_buy_qav}')     
                     '''       
-                    count = cursor.execute(insert_sql)
-                    print("Record inserted successfully into SqliteDb_developers table ", cursor.rowcount)
 
+                    try:
+                        count = cursor.execute(insert_sql)
+                        print("Record inserted successfully into SqliteDb_developers table ", cursor.rowcount)
+                    except sqlite3.Error as error:
+                        open_time = convert_ms_to_timestamp(open_time)
+                        print(f"Probably a timing error.Tried to insert {SYMBOL}, {open_time}", error)
             except sqlite3.Error as error:
                 print("Failed to insert data into sqlite table", error)
 
@@ -86,6 +99,12 @@ def run():
 
     except():
         pass
+
+
+def local_to_utc(local_dt):
+    local = pytz.timezone ("America/New_York")
+    utc_dt = local_dt.astimezone(pytz.utc)
+    return utc_dt
 
 
 def convert_ms_to_timestamp(ms):
