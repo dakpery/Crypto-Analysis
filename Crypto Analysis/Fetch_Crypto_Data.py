@@ -4,108 +4,170 @@ import datetime
 import sqlite3
 import pandas as pd
 import pytz
+import plotly.graph_objects as go
 
-db = r'C:\sqllite\Crypto.db'
-sqliteConnection = sqlite3.connect(db)
-cursor = sqliteConnection.cursor()
-sql_str = 'select * from not_keys'
-cursor.execute(sql_str)
-rows = cursor.fetchall()
-cursor.close()
 
-for tup1,tup2 in rows:
-    api_key = tup1
-    api_secret = tup2
 
-client = Client(api_key, api_secret)
 
 def run():
+    db = r'C:\sqllite\Crypto.db'
+    conn = establish_connection(db)
+    client = establish_keys(conn)
     SYMBOL = 'ETHUSDT'
     list_of_symbols = ['ETHUSDT']
-    time.sleep(5)
 
+    # run_for_graph = input("Enter your value: ") 
+ 
+    
     try:
         status = client.get_system_status()
 
         if(status.get('msg') == 'normal'):
-
             try:
-                sqliteConnection = sqlite3.connect(db)
-                cursor = sqliteConnection.cursor()
-                sql = 'SELECT * FROM HIST_ETHUSDT_DATA'
-
-                df = pd.read_sql(sql, sqliteConnection)
-                dates = df['OPEN_TIME'].tolist()
-                dates_list = [datetime.datetime.strptime(date, '%m/%d/%y %H:%M:%S') for date in dates]
-                max_local_dt = max(dates_list)   
-                max_utc_dt = local_to_utc(max_local_dt) + datetime.timedelta(seconds=60)
-                max_utc_str = max_utc_dt.strftime('%d %b, %Y %H:%M:%S')
-                
-                klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_5MINUTE, max_utc_str)
-                
-
-                ''' KLine list indexes
-                    index 0   // Open time
-                    index 1   // Open
-                    index 2   // High
-                    index 3   // Low
-                    index 4   // Close
-                    index 5   // Volume
-                    index 6   // Close time
-                    index 7   // Quote asset volume
-                    index 8   // Number of trades
-                    index 9   // Taker buy base asset volume
-                    index 10  // Taker buy quote asset volume
-                    index 11  // Ignore.
-                '''
-
-                for kline in klines:
-                    open_time = kline[0]
-                    open_price = kline[1]
-                    high = kline[2]
-                    low = kline[3]
-                    close = kline[4]
-                    volume = kline[5]
-                    close_time = kline[6]
-                    quote_asset_volume = kline[7]
-                    num_of_trades = kline[8]
-                    taker_buy_bav = kline[9]
-                    taker_buy_qav = kline[10]
-
-                    insert_sql = f'''
-                    
-                    insert into HIST_ETHUSDT_DATA (SYMBOL, OPEN_TIME, OPEN_PRICE, HIGH, LOW, CLOSE, VOLUME, CLOSE_TIME
-                    ,QUOTE_ASSET_VOLUME, NUM_OF_TRADES, TAKER_BUY_BAV, TAKER_BUY_QAV) VALUES 
-                    ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}','{convert_ms_to_timestamp(close_time)}','
-                    {quote_asset_volume}',{num_of_trades},'{taker_buy_bav}','{taker_buy_qav}')     
-                    '''       
-
-                    try:
-                        count = cursor.execute(insert_sql)
-                        print("Record inserted successfully into SqliteDb_developers table ", cursor.rowcount)
-                    except sqlite3.Error as error:
-                        open_time = convert_ms_to_timestamp(open_time)
-                        print(f"Probably a timing error.Tried to insert {SYMBOL}, {open_time}", error)
+                conn = establish_connection(db)
+                df = fetch_data(conn,client,SYMBOL)
+                build_candlestick(df)
             except sqlite3.Error as error:
-                print("Failed to insert data into sqlite table", error)
-
-            sqliteConnection.commit()
-            cursor.close()
-
-
+                print("Failed to connect to the DB", error)
         else:
             print('shit')
-
-
     except():
         pass
 
+
+
+
+def fetch_data(conn,client,SYMBOL):
+
+    max_local_dt = get_max_dt(conn)
+    
+    max_utc_dt = local_to_utc(max_local_dt) + datetime.timedelta(seconds=60)
+    
+    max_utc_str = max_utc_dt.strftime('%d %b, %Y %H:%M:%S')
+    
+    klines = client.get_historical_klines(SYMBOL, Client.KLINE_INTERVAL_5MINUTE, max_utc_str)
+    
+    write_klines(conn,klines,SYMBOL)
+
+    START_DT = None
+    END_DT = None
+
+    df = build_analaysis_df(conn, SYMBOL, START_DT, END_DT)
+
+    return df
+  
+def build_analaysis_df(conn,symbol,start_dt,end_dt):
+    if(start_dt is None or end_dt is None):
+        cursor = conn.cursor()
+        sql = f'SELECT * FROM HIST_ETHUSDT_DATA WHERE SYMBOL = \'{symbol}\''
+        df = pd.read_sql(sql, conn)
+        dates = df['OPEN_TIME'].tolist()
+        dates_list = [datetime.datetime.strptime(date, '%m/%d/%y %H:%M:%S') for date in dates]
+        df['OPEN_DATE'] = dates_list
+        
+    else:
+        print("Get delta DF")
+    
+    cursor.close()
+    return df
+
+def establish_connection(db):
+    sqliteConnection = sqlite3.connect(db)
+    return sqliteConnection
+
+def establish_keys(conn):
+    cursor = conn.cursor()
+    sql_str = 'select * from not_keys'
+    cursor.execute(sql_str)
+    rows = cursor.fetchall()
+    cursor.close()
+
+    for tup1,tup2 in rows:
+        api_key = tup1
+        api_secret = tup2
+
+    client = Client(api_key, api_secret)
+    conn.close()
+    return client
+
+def write_klines(conn,klines,SYMBOL):
+    cursor = conn.cursor()
+    for kline in klines:
+        open_time = kline[0]
+        open_price = kline[1]
+        high = kline[2]
+        low = kline[3]
+        close = kline[4]
+        volume = kline[5]
+        close_time = kline[6]
+        quote_asset_volume = kline[7]
+        num_of_trades = kline[8]
+        taker_buy_bav = kline[9]
+        taker_buy_qav = kline[10]
+
+        insert_sql = f'''
+        
+        insert into HIST_ETHUSDT_DATA (SYMBOL, OPEN_TIME, OPEN_PRICE, HIGH, LOW, CLOSE, VOLUME, CLOSE_TIME
+        ,QUOTE_ASSET_VOLUME, NUM_OF_TRADES, TAKER_BUY_BAV, TAKER_BUY_QAV) VALUES 
+        ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}','{convert_ms_to_timestamp(close_time)}','
+        {quote_asset_volume}',{num_of_trades},'{taker_buy_bav}','{taker_buy_qav}')     
+        '''       
+
+        try:
+            count = cursor.execute(insert_sql)
+            print("Record inserted successfully into SqliteDb_developers table ", cursor.rowcount)
+        except sqlite3.Error as error:
+            open_time = convert_ms_to_timestamp(open_time)
+            print(f"Failed to insert the following data: {SYMBOL}, {open_time}", error)
+    conn.commit()
+    cursor.close()
+    
+def get_max_dt(conn):
+    cursor = conn.cursor()
+
+    ''' KLine list indexes
+        index 0   // Open time
+        index 1   // Open
+        index 2   // High
+        index 3   // Low
+        index 4   // Close
+        index 5   // Volume
+        index 6   // Close time
+        index 7   // Quote asset volume
+        index 8   // Number of trades
+        index 9   // Taker buy base asset volume
+        index 10  // Taker buy quote asset volume
+        index 11  // Ignore.
+        '''
+    sql = 'SELECT * FROM HIST_ETHUSDT_DATA'
+
+    df = pd.read_sql(sql, conn)
+
+    dates = df['OPEN_TIME'].tolist()
+    
+    dates_list = [datetime.datetime.strptime(date, '%m/%d/%y %H:%M:%S') for date in dates]
+    
+    max_local_dt = max(dates_list) 
+
+    cursor.close()
+
+    return max_local_dt    
+
+def build_candlestick(df):
+    fig = go.Figure(data=[go.Candlestick(
+        x=df['OPEN_DATE'],
+        open=df['OPEN_PRICE'],
+        high=df['HIGH'],
+        low=df['LOW'],
+        close=df['CLOSE'])])
+
+    fig.update_layout(xaxis_rangeslider_visible=False)
+    fig.show()
 
 def local_to_utc(local_dt):
     local = pytz.timezone ("America/New_York")
     utc_dt = local_dt.astimezone(pytz.utc)
     return utc_dt
-
 
 def convert_ms_to_timestamp(ms):
     timestamp = datetime.datetime.fromtimestamp(ms/1000.0).strftime("%m/%d/%y %H:%M:%S")
