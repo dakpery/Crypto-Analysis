@@ -25,8 +25,16 @@ def run():
         if(status.get('msg') == 'normal'):
             try:
                 conn = establish_connection(db)
-                df = fetch_data(conn,client,SYMBOL)
-                build_candlestick(df)
+
+                iteration = 0
+
+                if(iteration == 0):
+                    fetch_historical_data(conn,client,SYMBOL)
+
+                insert_current_price()
+                iteration+=1
+
+                # build_candlestick(df)
             except sqlite3.Error as error:
                 print("Failed to connect to the DB", error)
         else:
@@ -35,9 +43,31 @@ def run():
         pass
 
 
+def insert_current_price(SYMBOL):
+    avg_price_dict = client.get_avg_price(symbol=SYMBOL)
+    avg_price = avg_price_dict.get('price')
+    time_now = datetime.datetime.now().strftime('%m-%d-%Y %H:%M:%S')
 
+    insert_sql = f'''
+    insert into HIST_ETHUSDT_DATA (SYMBOL, OPEN_TIME, OPEN_PRICE, HIGH, LOW, CLOSE, VOLUME, CLOSE_TIME
+    ,QUOTE_ASSET_VOLUME, NUM_OF_TRADES, TAKER_BUY_BAV, TAKER_BUY_QAV) VALUES 
+    ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}','{convert_ms_to_timestamp(close_time)}','
+    {quote_asset_volume}',{num_of_trades},'{taker_buy_bav}','{taker_buy_qav}')     
+    '''       
 
-def fetch_data(conn,client,SYMBOL):
+    open_time = datetime.datetime()
+    open_price = kline[1]
+    high = kline[2]
+    low = kline[3]
+    close = kline[4]
+    volume = kline[5]
+    close_time = kline[6]
+    quote_asset_volume = kline[7]
+    num_of_trades = kline[8]
+    taker_buy_bav = kline[9]
+    taker_buy_qav = kline[10]
+
+def fetch_historical_data(conn,client,SYMBOL):
 
     max_local_dt = get_max_dt(conn)
     
@@ -54,7 +84,7 @@ def fetch_data(conn,client,SYMBOL):
 
     df = build_analaysis_df(conn, SYMBOL, START_DT, END_DT)
 
-    return df
+    # return df
   
 def build_analaysis_df(conn,symbol,start_dt,end_dt):
     if(start_dt is None or end_dt is None):
