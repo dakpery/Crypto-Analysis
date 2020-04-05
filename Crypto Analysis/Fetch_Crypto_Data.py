@@ -5,7 +5,7 @@ import sqlite3
 import pandas as pd
 import pytz
 import plotly.graph_objects as go
-
+import win32api
 
 
 
@@ -24,16 +24,34 @@ def run():
 
         if(status.get('msg') == 'normal'):
             try:
+                gt = client.get_server_time()
+                tt=time.gmtime(int((gt["serverTime"])/1000))
+                win32api.SetSystemTime(tt[0],tt[1],0,tt[2],tt[3],tt[4],tt[5],0)
+
+
                 conn = establish_connection(db)
 
-                iteration = 0
+                iteration = 1
 
                 if(iteration == 0):
                     fetch_historical_data(conn,client,SYMBOL)
 
-                insert_current_price()
+                # fetch_open_orders(client,SYMBOL)
+
+                # insert_current_price(SYMBOL)
                 iteration+=1
 
+                
+                # orders = client.get_order_book(symbol='ETHUSDT')
+                orders = client.get_open_orders(symbol='ETHUSDT')
+
+                # order = client.create_test_order(
+                #     symbol='BNBBTC',
+                #     side=Client.SIDE_BUY,
+                #     type=Client.ORDER_TYPE_MARKET,
+                #     quantity=100)
+
+                print(orders)
                 # build_candlestick(df)
             except sqlite3.Error as error:
                 print("Failed to connect to the DB", error)
@@ -42,30 +60,37 @@ def run():
     except():
         pass
 
+def fetch_open_orders(client,SYMBOL):
+    print(SYMBOL)
+    # client = establish_keys(conn)
+    # orders = client.get_all_orders(symbol=SYMBOL, limit=10)
+    # open_orders = client.get_open_orders(symbol=SYMBOL)
+
 
 def insert_current_price(SYMBOL):
     avg_price_dict = client.get_avg_price(symbol=SYMBOL)
     avg_price = avg_price_dict.get('price')
     time_now = datetime.datetime.now().strftime('%m-%d-%Y %H:%M:%S')
+    kline = []
 
-    insert_sql = f'''
-    insert into HIST_ETHUSDT_DATA (SYMBOL, OPEN_TIME, OPEN_PRICE, HIGH, LOW, CLOSE, VOLUME, CLOSE_TIME
-    ,QUOTE_ASSET_VOLUME, NUM_OF_TRADES, TAKER_BUY_BAV, TAKER_BUY_QAV) VALUES 
-    ('{SYMBOL}','{convert_ms_to_timestamp(open_time)}','{open_price}','{high}','{low}','{close}','{volume}','{convert_ms_to_timestamp(close_time)}','
-    {quote_asset_volume}',{num_of_trades},'{taker_buy_bav}','{taker_buy_qav}')     
-    '''       
-
-    open_time = datetime.datetime()
-    open_price = kline[1]
-    high = kline[2]
-    low = kline[3]
-    close = kline[4]
-    volume = kline[5]
-    close_time = kline[6]
-    quote_asset_volume = kline[7]
-    num_of_trades = kline[8]
-    taker_buy_bav = kline[9]
-    taker_buy_qav = kline[10]
+    kline[0] = time_now
+    kline[1] = avg_price
+    kline[2] = avg_price
+    kline[3] = avg_price
+    kline[4] = avg_price
+    kline[5] = 0
+   
+    # open_time = kline[0]
+    # open_price = kline[1]
+    # high = kline[2]
+    # low = kline[3]
+    # close = kline[4]
+    # volume = kline[5]
+    # close_time = time_now
+    # quote_asset_volume = kline[7]
+    # num_of_trades = kline[8]
+    # taker_buy_bav = kline[9]
+    # taker_buy_qav = kline[10]
 
 def fetch_historical_data(conn,client,SYMBOL):
 
@@ -116,7 +141,7 @@ def establish_keys(conn):
         api_key = tup1
         api_secret = tup2
 
-    client = Client(api_key, api_secret)
+    client = Client(api_key, api_secret,tld='us')
     conn.close()
     return client
 
